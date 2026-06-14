@@ -390,13 +390,13 @@ def add_module_spacer() -> None:
 def show_quick_nav(text: dict) -> None:
     """Render a compact jump navigation for the main page modules."""
     links = [
-        ("course-settings", text["nav_course"]),
-        ("study-tasks", text["nav_tasks"]),
-        ("task-checklist", text["nav_checklist"]),
-        ("playlist", text["nav_playlist"]),
-        ("focus-mode", text["nav_focus"]),
-        ("generate-plan", text["generate"]),
-        ("study-plan", text["nav_plan"]),
+        ("course-settings", text.get("nav_course", "Course")),
+        ("study-tasks", text.get("nav_tasks", "Tasks")),
+        ("task-checklist", text.get("nav_checklist", "Checklist")),
+        ("playlist", text.get("nav_playlist", "Playlist")),
+        ("focus-mode", text.get("nav_focus", "Focus")),
+        ("generate-plan", text.get("generate", "Generate Study Plan")),
+        ("study-plan", text.get("nav_plan", "Plan")),
     ]
     link_html = "".join(f"<a href='#{anchor}'>{label}</a>" for anchor, label in links)
     art_html = """
@@ -407,7 +407,7 @@ def show_quick_nav(text: dict) -> None:
         </div>
     """
     st.markdown(
-        f"<nav class='quick-nav'><strong>{text['quick_actions']}</strong>{link_html}{art_html}</nav>",
+        f"<nav class='quick-nav'><strong>{text.get('quick_actions', 'Quick Actions')}</strong>{link_html}{art_html}</nav>",
         unsafe_allow_html=True,
     )
 
@@ -609,23 +609,36 @@ def show_playlist(text: dict) -> None:
     add_module_spacer()
     add_anchor("playlist")
     st.divider()
-    st.subheader(text["playlist"])
-    st.caption(text["playlist_caption"])
+    st.subheader(text.get("playlist", "Study Playlist"))
+    st.caption(
+        text.get(
+            "playlist_caption",
+            "Choose a background playlist for reading, coding, or deep work.",
+        )
+    )
 
-    playlist_options = text["playlist_options"]
+    playlist_options = text.get(
+        "playlist_options",
+        {
+            "Lo-fi focus": "https://www.youtube.com/results?search_query=lofi+study+music",
+            "Classical study": "https://www.youtube.com/results?search_query=classical+music+for+studying",
+            "Rain ambience": "https://www.youtube.com/results?search_query=rain+sounds+for+studying",
+            "Deep work": "https://www.youtube.com/results?search_query=deep+work+music",
+        },
+    )
     selected_playlist = st.selectbox(
-        text["playlist_select"],
+        text.get("playlist_select", "Playlist type"),
         list(playlist_options.keys()),
     )
     selected_url = playlist_options[selected_playlist]
 
     custom_url = st.text_input(
-        text["custom_playlist"],
+        text.get("custom_playlist", "Custom playlist link"),
         placeholder="https://...",
     )
     active_url = custom_url.strip() or selected_url
 
-    link_label = text["open_playlist"]
+    link_label = text.get("open_playlist", "Open playlist")
     st.markdown(
         f"""
         <div class="playlist-box">
@@ -1047,7 +1060,7 @@ def show_plan(plan_df, text: dict) -> None:
         mime="text/csv",
     )
     download_col_calendar.download_button(
-        label=text["download_ics"],
+        label=text.get("download_ics", "Download iCalendar"),
         data=ics_data,
         file_name="study_plan.ics",
         mime="text/calendar",
