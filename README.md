@@ -4,13 +4,10 @@ A beginner-friendly Python and Streamlit web app that creates a clear study plan
 
 Users enter a course name, exam date, available study time, weekly study days, task list, and difficulty level. The app calculates the remaining days before the exam and distributes tasks across available study dates. It works without an API key, but also includes an optional OpenAI mode for more natural study advice.
 
-## Live Demo
-Try the app here:
-https://your-app-name.streamlit.app
-
 ## Features
 
 - Course and exam setup
+- Reference tasks plus custom task input
 - Automatic calculation of days until exam
 - Rule-based task distribution across study dates
 - Daily study plan with focus recommendations
@@ -95,4 +92,58 @@ The app includes a small language pack in `locales.py` and supports:
 
 The sidebar language selector changes the main interface labels, table headers, status text, focus text, default tasks, and rule-based study advice.
 
+## Screenshot
 
+Create a screenshot after running the app and save it here:
+
+```text
+screenshots/app-preview.png
+```
+
+You can then add it to this README:
+
+```markdown
+![App Screenshot](screenshots/app-preview.png)
+```
+
+## Example GitHub Commit Messages
+
+```text
+Initial commit: add Streamlit study planner app
+Add rule-based task scheduling logic
+Add optional OpenAI study advice mode
+Add English Chinese German language pack
+Add weekend study planning option
+Add Pomodoro focus timer and focus log
+Add task checklist with completion tracking
+Add dark focus screen for Pomodoro sessions
+Add study playlist module
+Add reference tasks and custom task input
+Improve README with setup and resume description
+```
+
+## Resume Description
+
+English:
+
+```text
+AI Study Planner: Built a Python and Streamlit web application that generates personalized exam study plans based on course tasks, available study time, difficulty level, exam date, and optional weekend availability. Implemented rule-based scheduling, interactive task checklists, a study playlist module, Pomodoro focus tracking with a dark focus screen, CSV export, multilingual UI, and optional OpenAI-powered study advice.
+```
+
+German:
+
+```text
+AI Study Planner / Lernplan-Assistent: Entwicklung einer Python- und Streamlit-Webanwendung zur automatischen Erstellung personalisierter Lernplaene fuer Pruefungen. Die Anwendung verteilt Lernaufgaben anhand von Pruefungsdatum, verfuegbarer Lernzeit, Wochenendverfuegbarkeit und Schwierigkeitsgrad, bietet interaktive Aufgaben-Checklisten, ein Lern-Playlist-Modul, Pomodoro-Fokustracking mit dunkler Fokusansicht, CSV-Export, mehrsprachige Benutzeroberflaeche sowie optional KI-gestuetzte Lernempfehlungen ueber die OpenAI API.
+```
+
+## Why This Project Is Good for a Beginner Portfolio
+
+This project shows practical skills that are useful for an Informatik bachelor's student:
+
+- Python programming
+- simple web app development with Streamlit
+- data handling with pandas
+- basic scheduling logic
+- clean project structure
+- optional API integration
+- user-focused feature design

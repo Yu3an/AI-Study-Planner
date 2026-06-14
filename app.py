@@ -73,12 +73,7 @@ def main() -> None:
 
     with col_right:
         add_anchor("study-tasks")
-        st.subheader(text["study_tasks"])
-        raw_tasks = st.text_area(
-            text["tasks_help"],
-            value=text["default_tasks"],
-            height=260,
-        )
+        raw_tasks = build_task_input(text)
 
     st.session_state.last_course_name = course_name
     st.session_state.last_raw_tasks = raw_tasks
@@ -114,6 +109,44 @@ def reverse_lookup(options: dict, selected_label: str) -> str:
         if label == selected_label:
             return key
     return "Medium"
+
+
+def build_task_input(text: dict) -> str:
+    """Build the final task list from selected reference tasks and custom tasks."""
+    st.subheader(text["study_tasks"])
+    st.caption(
+        text.get(
+            "study_tasks_caption",
+            "Select useful reference tasks and add your own tasks if needed.",
+        )
+    )
+
+    reference_tasks = text.get("reference_tasks", clean_tasks(text.get("default_tasks", "")))
+    selected_reference_tasks = st.multiselect(
+        text.get("reference_tasks_label", "Reference tasks"),
+        reference_tasks,
+        default=reference_tasks[:4],
+    )
+    custom_tasks = st.text_area(
+        text.get("custom_tasks_label", "Custom tasks"),
+        value="",
+        height=150,
+        placeholder=text.get("custom_tasks_placeholder", "Enter one custom task per line"),
+    )
+
+    final_tasks = selected_reference_tasks + clean_tasks(custom_tasks)
+    if final_tasks:
+        st.caption(text.get("selected_tasks_preview", "Selected task list"))
+        st.write(", ".join(final_tasks))
+    else:
+        st.info(
+            text.get(
+                "empty_task_selection",
+                "Select at least one reference task or enter a custom task.",
+            )
+        )
+
+    return "\n".join(final_tasks)
 
 
 def apply_typography_style() -> None:
