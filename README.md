@@ -6,7 +6,7 @@ Users enter a course name, exam date, available study time, weekly study days, t
 
 ## Live Demo
 Try the app here:
-https://your-app-name.streamlit.app
+https://ai-study-planner-gheknpn8kzxhe28nmshwqb.streamlit.app
   
 ## Features
 
