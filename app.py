@@ -1,6 +1,7 @@
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time as datetime_time, timedelta
 import random
 import time
+from uuid import uuid4
 
 import pandas as pd
 import streamlit as st
@@ -82,8 +83,16 @@ def main() -> None:
     show_playlist(text)
     show_focus_timer(text, course_name)
 
-    if st.button(text["generate"], type="primary"):
-        plan_df, summary = generate_plan(
+    add_anchor("generate-plan")
+    generate_from_main_button = st.button(
+        text["generate"],
+        type="primary",
+        key="main_generate_plan",
+    )
+
+    if generate_from_main_button:
+        render_generated_plan(
+            api_key=api_key,
             course_name=course_name,
             exam_date=exam_date,
             daily_hours=daily_hours,
@@ -92,15 +101,8 @@ def main() -> None:
             difficulty=difficulty,
             include_weekends=include_weekends,
             weekend_hours=weekend_hours,
+            text=text,
         )
-
-        if plan_df.empty:
-            st.error(text["input_error"])
-            return
-
-        show_summary(summary, text)
-        show_plan(plan_df, text)
-        show_advice(api_key, course_name, difficulty, raw_tasks, summary, text)
 
 
 def reverse_lookup(options: dict, selected_label: str) -> str:
@@ -109,6 +111,39 @@ def reverse_lookup(options: dict, selected_label: str) -> str:
         if label == selected_label:
             return key
     return "Medium"
+
+
+def render_generated_plan(
+    api_key: str,
+    course_name: str,
+    exam_date: date,
+    daily_hours: float,
+    study_days_per_week: int,
+    raw_tasks: str,
+    difficulty: str,
+    include_weekends: bool,
+    weekend_hours: float,
+    text: dict,
+) -> None:
+    """Generate and render the study plan from any page action button."""
+    plan_df, summary = generate_plan(
+        course_name=course_name,
+        exam_date=exam_date,
+        daily_hours=daily_hours,
+        study_days_per_week=study_days_per_week,
+        raw_tasks=raw_tasks,
+        difficulty=difficulty,
+        include_weekends=include_weekends,
+        weekend_hours=weekend_hours,
+    )
+
+    if plan_df.empty:
+        st.error(text["input_error"])
+        return
+
+    show_summary(summary, text)
+    show_plan(plan_df, text)
+    show_advice(api_key, course_name, difficulty, raw_tasks, summary, text)
 
 
 def build_task_input(text: dict) -> str:
@@ -187,15 +222,41 @@ def apply_typography_style() -> None:
         }
         .quick-nav {
             display: flex;
+            flex-direction: column;
             flex-wrap: wrap;
             gap: 0.55rem;
-            margin: 1rem 0 1.5rem 0;
-            padding: 0.7rem 0;
-            border-top: 1px solid #e5e7eb;
-            border-bottom: 1px solid #e5e7eb;
+            position: fixed;
+            top: 7rem;
+            right: 0.9rem;
+            width: 7.4rem;
+            min-height: 2.8rem;
+            margin: 0;
+            padding: 0.55rem;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            background: rgba(250, 250, 250, 0.96);
+            box-shadow: 0 8px 20px rgba(17, 24, 39, 0.08);
+            z-index: 1000;
+            overflow: hidden;
+            transition: width 160ms ease, padding 160ms ease;
+        }
+        .quick-nav:hover,
+        .quick-nav:focus-within {
+            width: 9.8rem;
+            padding: 0.75rem 0.7rem 0.85rem 0.7rem;
+        }
+        .quick-nav strong {
+            align-self: center;
+            white-space: nowrap;
+            font-size: 0.85rem;
+            letter-spacing: 0;
+        }
+        .quick-nav:hover strong,
+        .quick-nav:focus-within strong {
+            align-self: flex-start;
         }
         .quick-nav a {
-            display: inline-flex;
+            display: none;
             align-items: center;
             padding: 0.35rem 0.65rem;
             border: 1px solid #d1d5db;
@@ -205,9 +266,64 @@ def apply_typography_style() -> None:
             font-size: 0.9rem;
             background: #ffffff;
         }
+        .quick-nav:hover a,
+        .quick-nav:focus-within a {
+            display: inline-flex;
+        }
         .quick-nav a:hover {
             background: #f3f4f6;
             border-color: #9ca3af;
+        }
+        .quick-nav-art {
+            display: none;
+            justify-content: center;
+            gap: 0.45rem;
+            padding-top: 0.25rem;
+            margin-top: 0.25rem;
+            border-top: 1px solid #e5e7eb;
+        }
+        .quick-nav:hover .quick-nav-art,
+        .quick-nav:focus-within .quick-nav-art {
+            display: flex;
+        }
+        .quick-friend {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 1.9rem;
+            height: 1.9rem;
+            border: 1.8px solid #111827;
+            border-radius: 48% 48% 54% 54%;
+            background: #ffffff;
+            color: #111827;
+            font-family: "Courier New", monospace;
+            font-size: 0.58rem;
+            font-weight: 700;
+            line-height: 1;
+            position: relative;
+        }
+        .quick-friend::after {
+            content: "";
+            position: absolute;
+            width: 0.43rem;
+            height: 0.43rem;
+            top: -0.08rem;
+            right: 0.12rem;
+            border-top: 1.8px solid #111827;
+            border-right: 1.8px solid #111827;
+            background: #ffffff;
+            transform: rotate(45deg);
+        }
+        .quick-friend.rabbit::after {
+            width: 0.28rem;
+            height: 0.8rem;
+            top: -0.35rem;
+            right: 0.32rem;
+            border-radius: 0.45rem 0.45rem 0 0;
+            transform: rotate(18deg);
+        }
+        .quick-friend.panda {
+            box-shadow: inset 0.28rem 0 0 #111827, inset -0.28rem 0 0 #111827;
         }
         .module-spacer {
             height: 1.5rem;
@@ -238,6 +354,23 @@ def apply_typography_style() -> None:
         .playlist-box a:hover {
             background: #f3f4f6;
         }
+        @media (max-width: 900px) {
+            .quick-nav {
+                display: flex;
+                position: static;
+                width: auto;
+                min-height: 0;
+                margin: 1rem 0 1.25rem 0;
+                overflow: visible;
+            }
+            .quick-nav strong {
+                align-self: flex-start;
+            }
+            .quick-nav a,
+            .quick-nav-art {
+                display: flex;
+            }
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -262,10 +395,21 @@ def show_quick_nav(text: dict) -> None:
         ("task-checklist", text["nav_checklist"]),
         ("playlist", text["nav_playlist"]),
         ("focus-mode", text["nav_focus"]),
+        ("generate-plan", text["generate"]),
         ("study-plan", text["nav_plan"]),
     ]
     link_html = "".join(f"<a href='#{anchor}'>{label}</a>" for anchor, label in links)
-    st.markdown(f"<nav class='quick-nav'>{link_html}</nav>", unsafe_allow_html=True)
+    art_html = """
+        <div class='quick-nav-art'>
+            <span class='quick-friend'>=^</span>
+            <span class='quick-friend rabbit'>o.</span>
+            <span class='quick-friend panda'>•.</span>
+        </div>
+    """
+    st.markdown(
+        f"<nav class='quick-nav'><strong>{text['quick_actions']}</strong>{link_html}{art_html}</nav>",
+        unsafe_allow_html=True,
+    )
 
 
 def show_companion_banner(text: dict) -> None:
@@ -893,11 +1037,20 @@ def show_plan(plan_df, text: dict) -> None:
     st.dataframe(localized_df, use_container_width=True, hide_index=True)
 
     csv_data = localized_df.to_csv(index=False).encode("utf-8-sig")
-    st.download_button(
+    ics_data = build_icalendar(plan_df).encode("utf-8")
+
+    download_col_csv, download_col_calendar = st.columns([1, 1])
+    download_col_csv.download_button(
         label=text["download_csv"],
         data=csv_data,
         file_name="study_plan.csv",
         mime="text/csv",
+    )
+    download_col_calendar.download_button(
+        label=text["download_ics"],
+        data=ics_data,
+        file_name="study_plan.ics",
+        mime="text/calendar",
     )
 
 
@@ -931,6 +1084,53 @@ def show_advice(
 def translate_value(text: dict, group: str, value: str) -> str:
     """Translate a planner value while keeping the original as fallback."""
     return text[group].get(value, value)
+
+
+def build_icalendar(plan_df) -> str:
+    """Create an iCalendar file from the generated study plan."""
+    lines = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//AI Study Planner//Study Plan//EN",
+        "CALSCALE:GREGORIAN",
+    ]
+    created_at = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+
+    for _, row in plan_df.iterrows():
+        start_date = datetime.strptime(row["Date"], "%Y-%m-%d").date()
+        start_dt = datetime.combine(start_date, datetime_time(hour=9))
+        duration_hours = float(row["Planned Hours"])
+        end_dt = start_dt + timedelta(minutes=int(duration_hours * 60))
+
+        summary = f"{row['Course']} study session"
+        description = f"Tasks: {row['Tasks']}\\nFocus: {row['Focus']}"
+
+        lines.extend(
+            [
+                "BEGIN:VEVENT",
+                f"UID:{uuid4()}@ai-study-planner",
+                f"DTSTAMP:{created_at}",
+                f"DTSTART:{start_dt.strftime('%Y%m%dT%H%M%S')}",
+                f"DTEND:{end_dt.strftime('%Y%m%dT%H%M%S')}",
+                f"SUMMARY:{escape_ical_text(summary)}",
+                f"DESCRIPTION:{escape_ical_text(description)}",
+                "END:VEVENT",
+            ]
+        )
+
+    lines.append("END:VCALENDAR")
+    return "\r\n".join(lines)
+
+
+def escape_ical_text(value: str) -> str:
+    """Escape text values for a simple iCalendar file."""
+    return (
+        str(value)
+        .replace("\\", "\\\\")
+        .replace(";", "\\;")
+        .replace(",", "\\,")
+        .replace("\n", "\\n")
+    )
 
 
 def localize_plan(plan_df, text: dict):
