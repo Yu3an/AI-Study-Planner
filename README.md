@@ -4,6 +4,10 @@ A beginner-friendly Python and Streamlit web app that creates a clear study plan
 
 Users enter a course name, exam date, available study time, weekly study days, task list, and difficulty level. The app calculates the remaining days before the exam and distributes tasks across available study dates. It works without an API key, but also includes an optional OpenAI mode for more natural study advice.
 
+## Live Demo
+Try the app here:
+https://your-app-name.streamlit.app
+
 ## Features
 
 - Course and exam setup
