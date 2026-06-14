@@ -23,7 +23,7 @@ https://your-app-name.streamlit.app
 - Focus log CSV export
 - Difficulty-aware time estimation
 - Practical revision advice
-- CSV export
+- ICS/CSV export
 - English, Chinese, and German interface language pack
 - Optional OpenAI API mode for AI-generated suggestions
 - Simple Streamlit interface suitable for GitHub screenshots
@@ -83,7 +83,7 @@ The default rule-based mode still creates:
 
 - the full study plan
 - the schedule
-- the CSV export
+- the ICS/CSV export
 - revision recommendations
 
 ## Language Support
