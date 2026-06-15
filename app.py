@@ -1,4 +1,5 @@
 from datetime import date, datetime, time as datetime_time, timedelta
+from html import escape
 import json
 import random
 import time
@@ -26,6 +27,7 @@ def main() -> None:
     init_focus_state()
     init_checklist_state()
     init_app_input_state()
+    apply_pending_profile_load()
     preserve_app_input_state()
 
     if st.session_state.focus_screen_active:
@@ -69,12 +71,52 @@ def main() -> None:
             key="exam_date",
             min_value=date.today(),
         )
-        daily_hours = st.slider(text["daily_hours"], 0.5, 8.0, 0.5, key="daily_hours")
+        hours_slider_col, hours_input_col = st.columns([3, 1])
+        with hours_slider_col:
+            st.slider(
+                text["daily_hours"],
+                min_value=0.5,
+                max_value=8.0,
+                step=0.5,
+                key="daily_hours_slider",
+                on_change=sync_daily_hours_from_slider,
+            )
+        with hours_input_col:
+            st.number_input(
+                text.get("custom_daily_hours", "Custom"),
+                min_value=0.5,
+                max_value=24.0,
+                step=None,
+                format="%.2f",
+                key="daily_hours_input",
+                on_change=sync_daily_hours_from_input,
+            )
+        daily_hours = st.session_state.daily_hours
         study_days_per_week = st.slider(text["study_days_per_week"], 1, 7, key="study_days_per_week")
         include_weekends = st.checkbox(text["include_weekends"], key="include_weekends")
         weekend_hours = 0.0
         if include_weekends:
-            weekend_hours = st.slider(text["weekend_hours"], 0.5, 10.0, 0.5, key="weekend_hours")
+            weekend_slider_col, weekend_input_col = st.columns([3, 1])
+            with weekend_slider_col:
+                st.slider(
+                    text["weekend_hours"],
+                    min_value=0.5,
+                    max_value=10.0,
+                    step=0.5,
+                    key="weekend_hours_slider",
+                    on_change=sync_weekend_hours_from_slider,
+                )
+            with weekend_input_col:
+                st.number_input(
+                    text.get("custom_daily_hours", "Custom"),
+                    min_value=0.5,
+                    max_value=24.0,
+                    step=None,
+                    format="%.2f",
+                    key="weekend_hours_input",
+                    on_change=sync_weekend_hours_from_input,
+                )
+            weekend_hours = st.session_state.weekend_hours
 
         difficulty_labels = text["difficulty_options"]
         ensure_select_value("difficulty_label", list(difficulty_labels.values()), fallback_index=1)
@@ -140,6 +182,34 @@ def ensure_select_value(state_key: str, valid_values: list, fallback_index: int 
         st.session_state[state_key] = valid_values[fallback_index]
 
 
+def sync_daily_hours_from_slider() -> None:
+    """Use the slider value as the active weekday study duration."""
+    value = float(st.session_state.daily_hours_slider)
+    st.session_state.daily_hours = value
+    st.session_state.daily_hours_input = value
+
+
+def sync_daily_hours_from_input() -> None:
+    """Use the custom input value as the active weekday study duration."""
+    value = float(st.session_state.daily_hours_input)
+    st.session_state.daily_hours = value
+    st.session_state.daily_hours_slider = min(value, 8.0)
+
+
+def sync_weekend_hours_from_slider() -> None:
+    """Use the slider value as the active weekend study duration."""
+    value = float(st.session_state.weekend_hours_slider)
+    st.session_state.weekend_hours = value
+    st.session_state.weekend_hours_input = value
+
+
+def sync_weekend_hours_from_input() -> None:
+    """Use the custom input value as the active weekend study duration."""
+    value = float(st.session_state.weekend_hours_input)
+    st.session_state.weekend_hours = value
+    st.session_state.weekend_hours_slider = min(value, 10.0)
+
+
 def init_app_input_state() -> None:
     """Initialize user input values so they survive focus-screen navigation."""
     defaults = {
@@ -148,9 +218,13 @@ def init_app_input_state() -> None:
         "course_name": "Algorithms and Data Structures",
         "exam_date": date.today() + timedelta(days=21),
         "daily_hours": 2.0,
+        "daily_hours_slider": 2.0,
+        "daily_hours_input": 2.0,
         "study_days_per_week": 5,
         "include_weekends": True,
         "weekend_hours": 3.0,
+        "weekend_hours_slider": 3.0,
+        "weekend_hours_input": 3.0,
         "difficulty_label": "Medium",
         "custom_tasks": "",
         "playlist_custom_url": "",
@@ -171,6 +245,9 @@ def init_app_input_state() -> None:
         "profile_name": "",
         "selected_saved_profile": "",
         "skip_auto_save_once": False,
+        "pending_profile_to_load": "",
+        "pending_profile_snapshot": None,
+        "profile_loaded_message": False,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -185,9 +262,13 @@ def preserve_app_input_state() -> None:
         "course_name",
         "exam_date",
         "daily_hours",
+        "daily_hours_slider",
+        "daily_hours_input",
         "study_days_per_week",
         "include_weekends",
         "weekend_hours",
+        "weekend_hours_slider",
+        "weekend_hours_input",
         "difficulty_label",
         "selected_reference_tasks",
         "custom_tasks",
@@ -232,6 +313,7 @@ def show_memory_controls(text: dict) -> None:
 
     selected_profile = ""
     if profile_names:
+        ensure_select_value("selected_saved_profile", profile_names)
         selected_profile = st.selectbox(
             text.get("saved_profiles", "Saved profiles"),
             profile_names,
@@ -254,12 +336,14 @@ def show_memory_controls(text: dict) -> None:
     else:
         st.warning(text.get("profile_required", "Enter a profile name first."))
 
+    if st.session_state.get("profile_loaded_message"):
+        st.success(text.get("profile_loaded", "Profile loaded."))
+        st.session_state.profile_loaded_message = False
+
     if st.button(text.get("load_profile", "Load"), use_container_width=True):
         if selected_profile and selected_profile in saved_profiles:
-            apply_profile_snapshot(saved_profiles[selected_profile])
-            st.session_state.profile_name = selected_profile
-            st.session_state.skip_auto_save_once = True
-            st.success(text.get("profile_loaded", "Profile loaded."))
+            st.session_state.pending_profile_to_load = selected_profile
+            st.session_state.pending_profile_snapshot = saved_profiles[selected_profile]
             st.rerun()
 
     if selected_profile and st.button(text.get("delete_profile", "Delete profile")):
@@ -314,20 +398,43 @@ def build_profile_snapshot() -> dict:
     }
 
 
+def apply_pending_profile_load() -> None:
+    """Restore a profile before widget-backed keys are instantiated."""
+    profile_name = st.session_state.get("pending_profile_to_load", "")
+    profile = st.session_state.get("pending_profile_snapshot")
+
+    if not profile_name or not isinstance(profile, dict):
+        return
+
+    apply_profile_snapshot(profile)
+    st.session_state.profile_name = profile_name
+    st.session_state.selected_saved_profile = profile_name
+    st.session_state.skip_auto_save_once = True
+    st.session_state.profile_loaded_message = True
+    st.session_state.pending_profile_to_load = ""
+    st.session_state.pending_profile_snapshot = None
+
+
 def apply_profile_snapshot(profile: dict) -> None:
     """Restore app state from a saved profile."""
     st.session_state.course_name = profile.get("course_name", st.session_state.course_name)
     st.session_state.exam_date = date.fromisoformat(
         profile.get("exam_date", st.session_state.exam_date.isoformat())
     )
-    st.session_state.daily_hours = float(profile.get("daily_hours", st.session_state.daily_hours))
+    daily_hours = float(profile.get("daily_hours", st.session_state.daily_hours))
+    st.session_state.daily_hours = daily_hours
+    st.session_state.daily_hours_input = daily_hours
+    st.session_state.daily_hours_slider = min(daily_hours, 8.0)
     st.session_state.study_days_per_week = int(
         profile.get("study_days_per_week", st.session_state.study_days_per_week)
     )
     st.session_state.include_weekends = bool(
         profile.get("include_weekends", st.session_state.include_weekends)
     )
-    st.session_state.weekend_hours = float(profile.get("weekend_hours", st.session_state.weekend_hours))
+    weekend_hours = float(profile.get("weekend_hours", st.session_state.weekend_hours))
+    st.session_state.weekend_hours = weekend_hours
+    st.session_state.weekend_hours_input = weekend_hours
+    st.session_state.weekend_hours_slider = min(weekend_hours, 10.0)
     st.session_state.difficulty_label = profile.get("difficulty_label", st.session_state.difficulty_label)
     st.session_state.selected_reference_tasks = profile.get("selected_reference_tasks", [])
     st.session_state.custom_tasks = profile.get("custom_tasks", "")
@@ -385,7 +492,12 @@ def render_stored_plan(api_key: str, text: dict) -> None:
     summary = st.session_state.generated_summary
     context = st.session_state.generated_context
 
-    show_summary(summary, text)
+    show_summary(
+        summary=summary,
+        text=text,
+        plan_df=plan_df,
+        raw_tasks=context.get("raw_tasks", ""),
+    )
     show_plan(plan_df, text)
     show_advice(
         api_key=api_key,
@@ -844,9 +956,10 @@ def show_companion_banner(text: dict) -> None:
 
 def show_task_checklist(text: dict, raw_tasks: str, compact: bool = False) -> None:
     """Show a checkbox list for study tasks and track completion progress."""
-    add_module_spacer()
-    add_anchor("task-checklist")
-    st.divider()
+    if not compact:
+        add_module_spacer()
+        add_anchor("task-checklist")
+        st.divider()
     st.subheader(text["task_checklist"])
 
     tasks = clean_tasks(raw_tasks)
@@ -967,9 +1080,12 @@ def show_focus_screen(text: dict) -> None:
         st.session_state.focus_screen_active = False
         st.rerun()
 
-    timer_col, checklist_col = st.columns([1, 1])
+    _, timer_col, _ = st.columns([0.35, 3.3, 0.35])
     with timer_col:
         show_minimal_focus_timer(text, course_name)
+
+    st.markdown("<div class='focus-checklist-divider'></div>", unsafe_allow_html=True)
+    _, checklist_col, _ = st.columns([1, 3, 1])
     with checklist_col:
         show_task_checklist(text, raw_tasks, compact=True)
 
@@ -1003,10 +1119,20 @@ def apply_focus_screen_style() -> None:
         .focus-title {
             text-align: center;
             font-size: 2.4rem;
-            margin: 1rem 0 2rem 0;
+            margin: 1rem 0 3.5rem 0;
+        }
+        .focus-title,
+        .focus-checklist-divider + div h3,
+        [data-testid="column"] h3 {
+            text-align: center;
+        }
+        .focus-checklist-divider {
+            margin: 2rem auto 1.2rem auto;
+            width: min(54rem, 100%);
+            border-top: 1px solid #27272a;
         }
         [data-testid="stMetricValue"] {
-            font-size: 5rem;
+            font-size: 9rem;
             text-align: center;
         }
         [data-testid="stMetricLabel"] {
@@ -1336,7 +1462,7 @@ def localize_focus_log(log_df, text: dict):
     return localized_df.rename(columns=text["focus_log_columns"])
 
 
-def show_summary(summary: dict, text: dict) -> None:
+def show_summary(summary: dict, text: dict, plan_df, raw_tasks: str) -> None:
     """Display the most important calculated values as metrics."""
     add_module_spacer()
     add_anchor("study-plan")
@@ -1347,6 +1473,334 @@ def show_summary(summary: dict, text: dict) -> None:
     metric_cols[2].metric(text["tasks"], summary["total_tasks"])
     metric_cols[3].metric(text["available_hours"], summary["total_available_hours"])
     metric_cols[4].metric(text["status"], translate_value(text, "status_values", summary["status"]))
+    show_visual_overview(summary, text, plan_df, raw_tasks)
+
+
+def show_visual_overview(summary: dict, text: dict, plan_df, raw_tasks: str) -> None:
+    """Show progress and remaining-time visuals for the generated plan."""
+    tasks = clean_tasks(raw_tasks)
+    total_tasks = len(tasks) or int(summary.get("total_tasks", 0))
+    completed_tasks = sum(
+        1 for task in tasks if st.session_state.get("task_checklist", {}).get(task, False)
+    )
+    remaining_tasks = max(total_tasks - completed_tasks, 0)
+    completion_rate = completed_tasks / total_tasks if total_tasks else 0.0
+
+    estimated_needed_hours = float(summary.get("estimated_needed_hours", 0) or 0)
+    remaining_needed_hours = round(estimated_needed_hours * (1 - completion_rate), 2)
+    remaining_available_hours = calculate_remaining_available_hours(plan_df)
+    hour_gap = round(remaining_available_hours - remaining_needed_hours, 2)
+    health_key = choose_plan_health(remaining_available_hours, remaining_needed_hours)
+
+    health_label = text.get("plan_health_values", {}).get(health_key, health_key)
+    health_message = text.get("plan_health_messages", {}).get(health_key, "")
+
+    render_visual_overview_panel(
+        text=text,
+        completed_tasks=completed_tasks,
+        remaining_tasks=remaining_tasks,
+        total_tasks=total_tasks,
+        completion_rate=completion_rate,
+        remaining_needed_hours=remaining_needed_hours,
+        remaining_available_hours=remaining_available_hours,
+        hour_gap=hour_gap,
+        health_key=health_key,
+        health_label=health_label,
+        health_message=health_message,
+    )
+
+
+def render_visual_overview_panel(
+    text: dict,
+    completed_tasks: int,
+    remaining_tasks: int,
+    total_tasks: int,
+    completion_rate: float,
+    remaining_needed_hours: float,
+    remaining_available_hours: float,
+    hour_gap: float,
+    health_key: str,
+    health_label: str,
+    health_message: str,
+) -> None:
+    """Render a compact custom overview instead of default Streamlit charts."""
+    completion_percent = round(completion_rate * 100)
+    task_total = max(completed_tasks + remaining_tasks, 1)
+    completed_percent = round((completed_tasks / task_total) * 100)
+    remaining_percent = 100 - completed_percent
+    time_total = max(remaining_needed_hours, remaining_available_hours, 1)
+    need_percent = round((remaining_needed_hours / time_total) * 100)
+    available_percent = round((remaining_available_hours / time_total) * 100)
+    health_class = {
+        "On track": "is-good",
+        "Tight": "is-tight",
+        "Critical": "is-critical",
+    }.get(health_key, "is-tight")
+
+    html = f"""
+    <style>
+    .visual-panel {{
+        margin: 0.35rem 0 1.15rem 0;
+        padding: 1rem 0;
+        border-top: 1px solid #e5e7eb;
+        border-bottom: 1px solid #e5e7eb;
+    }}
+    .visual-heading {{
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-bottom: 0.8rem;
+    }}
+    .visual-heading-title {{
+        font-size: 1rem;
+        font-weight: 700;
+        color: #111827;
+    }}
+    .health-chip {{
+        padding: 0.24rem 0.58rem;
+        border-radius: 999px;
+        font-size: 0.78rem;
+        font-weight: 700;
+        border: 1px solid;
+        white-space: nowrap;
+    }}
+    .health-chip.is-good {{
+        color: #166534;
+        background: #ecfdf3;
+        border-color: #bbf7d0;
+    }}
+    .health-chip.is-tight {{
+        color: #92400e;
+        background: #fffbeb;
+        border-color: #fde68a;
+    }}
+    .health-chip.is-critical {{
+        color: #991b1b;
+        background: #fef2f2;
+        border-color: #fecaca;
+    }}
+    .visual-grid {{
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 0.75rem;
+    }}
+    .visual-stat {{
+        min-height: 5.2rem;
+        padding: 0.8rem 0.85rem;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        background: #ffffff;
+    }}
+    .visual-stat-label {{
+        margin-bottom: 0.4rem;
+        font-size: 0.76rem;
+        font-weight: 650;
+        color: #6b7280;
+    }}
+    .visual-stat-value {{
+        font-size: 1.5rem;
+        font-weight: 750;
+        color: #111827;
+        line-height: 1.15;
+    }}
+    .visual-stat-note {{
+        margin-top: 0.35rem;
+        font-size: 0.76rem;
+        color: #6b7280;
+    }}
+    .visual-status {{
+        margin-top: 0.85rem;
+        padding: 0.7rem 0.85rem;
+        border-left: 4px solid #2563eb;
+        background: #f8fafc;
+        color: #1f2937;
+        font-size: 0.9rem;
+    }}
+    .visual-status.is-good {{
+        border-left-color: #16a34a;
+    }}
+    .visual-status.is-tight {{
+        border-left-color: #f59e0b;
+    }}
+    .visual-status.is-critical {{
+        border-left-color: #dc2626;
+    }}
+    .visual-bars {{
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 1rem;
+        margin-top: 1rem;
+    }}
+    .meter-block {{
+        padding: 0.85rem;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        background: #ffffff;
+    }}
+    .meter-title {{
+        margin-bottom: 0.65rem;
+        font-size: 0.88rem;
+        font-weight: 700;
+        color: #111827;
+    }}
+    .meter-row {{
+        display: grid;
+        grid-template-columns: minmax(5.5rem, 0.75fr) minmax(0, 2fr) minmax(3rem, auto);
+        align-items: center;
+        gap: 0.55rem;
+        margin: 0.55rem 0;
+        font-size: 0.8rem;
+        color: #374151;
+    }}
+    .meter-track {{
+        height: 0.58rem;
+        overflow: hidden;
+        border-radius: 999px;
+        background: #e5e7eb;
+    }}
+    .meter-fill {{
+        height: 100%;
+        border-radius: 999px;
+    }}
+    .meter-fill.done {{
+        background: #16a34a;
+    }}
+    .meter-fill.open {{
+        background: #64748b;
+    }}
+    .meter-fill.need {{
+        background: #dc2626;
+    }}
+    .meter-fill.available {{
+        background: #2563eb;
+    }}
+    .meter-value {{
+        text-align: right;
+        font-weight: 700;
+        color: #111827;
+    }}
+    @media (max-width: 900px) {{
+        .visual-grid,
+        .visual-bars {{
+            grid-template-columns: 1fr 1fr;
+        }}
+    }}
+    @media (max-width: 640px) {{
+        .visual-heading {{
+            align-items: flex-start;
+            flex-direction: column;
+        }}
+        .visual-grid,
+        .visual-bars {{
+            grid-template-columns: 1fr;
+        }}
+        .meter-row {{
+            grid-template-columns: 1fr;
+            gap: 0.35rem;
+        }}
+        .meter-value {{
+            text-align: left;
+        }}
+    }}
+    </style>
+    <div class="visual-panel">
+        <div class="visual-heading">
+            <div class="visual-heading-title">{escape(text.get("visual_overview", "Visual Overview"))}</div>
+            <div class="health-chip {health_class}">{escape(health_label)}</div>
+        </div>
+        <div class="visual-grid">
+            {render_visual_stat(text.get("completed_tasks", "Completed"), str(completed_tasks), f"{completion_percent}%")}
+            {render_visual_stat(text.get("remaining_tasks", "Remaining"), str(remaining_tasks), text.get("tasks", "Tasks"))}
+            {render_visual_stat(text.get("remaining_needed_hours", "Need more"), format_hours(remaining_needed_hours), "")}
+            {render_visual_stat(text.get("remaining_available_hours", "Time left"), format_hours(remaining_available_hours), format_signed_hours(hour_gap))}
+        </div>
+        <div class="visual-status {health_class}">
+            <strong>{escape(text.get("plan_health", "Plan health"))}: {escape(health_label)}.</strong>
+            {escape(health_message)}
+        </div>
+        <div class="visual-bars">
+            <div class="meter-block">
+                <div class="meter-title">{escape(text.get("task_progress_chart", "Task progress"))}</div>
+                {render_meter_row(text.get("completed_tasks", "Completed"), completed_percent, str(completed_tasks), "done")}
+                {render_meter_row(text.get("remaining_tasks", "Remaining"), remaining_percent, str(remaining_tasks), "open")}
+            </div>
+            <div class="meter-block">
+                <div class="meter-title">{escape(text.get("remaining_time_chart", "Remaining time"))}</div>
+                {render_meter_row(text.get("remaining_needed_hours", "Need more"), need_percent, format_hours(remaining_needed_hours), "need")}
+                {render_meter_row(text.get("remaining_available_hours", "Time left"), available_percent, format_hours(remaining_available_hours), "available")}
+            </div>
+        </div>
+        <div class="visual-stat-note">
+            {escape(text.get("completion_caption", "{completed} of {total} tasks completed.").format(
+                completed=completed_tasks,
+                total=total_tasks,
+                percent=completion_percent,
+            ))}
+        </div>
+    </div>
+    """
+    st.html(html)
+
+
+def render_visual_stat(label: str, value: str, note: str) -> str:
+    """Return one stat card for the custom summary overview."""
+    note_markup = f'<div class="visual-stat-note">{escape(note)}</div>' if note else ""
+    return f"""
+    <div class="visual-stat">
+        <div class="visual-stat-label">{escape(label)}</div>
+        <div class="visual-stat-value">{escape(value)}</div>
+        {note_markup}
+    </div>
+    """
+
+
+def render_meter_row(label: str, percent: int, value: str, fill_class: str) -> str:
+    """Return a horizontal meter row."""
+    safe_percent = max(0, min(percent, 100))
+    return f"""
+    <div class="meter-row">
+        <div>{escape(label)}</div>
+        <div class="meter-track"><div class="meter-fill {fill_class}" style="width: {safe_percent}%"></div></div>
+        <div class="meter-value">{escape(value)}</div>
+    </div>
+    """
+
+
+def calculate_remaining_available_hours(plan_df) -> float:
+    """Sum available study hours from today onward."""
+    if plan_df is None or plan_df.empty or "Date" not in plan_df or "Planned Hours" not in plan_df:
+        return 0.0
+
+    remaining_plan = plan_df.copy()
+    remaining_plan["Date"] = pd.to_datetime(remaining_plan["Date"], errors="coerce").dt.date
+    remaining_plan["Planned Hours"] = pd.to_numeric(
+        remaining_plan["Planned Hours"],
+        errors="coerce",
+    ).fillna(0)
+    remaining_plan = remaining_plan[remaining_plan["Date"] >= date.today()]
+    return round(float(remaining_plan["Planned Hours"].sum()), 2)
+
+
+def choose_plan_health(remaining_available_hours: float, remaining_needed_hours: float) -> str:
+    """Classify whether the remaining plan still has enough study time."""
+    if remaining_needed_hours <= 0:
+        return "On track"
+    if remaining_available_hours >= remaining_needed_hours:
+        return "On track"
+    if remaining_available_hours >= remaining_needed_hours * 0.75:
+        return "Tight"
+    return "Critical"
+
+
+def format_hours(value: float) -> str:
+    """Format hour values compactly for metrics."""
+    return f"{value:g}h"
+
+
+def format_signed_hours(value: float) -> str:
+    """Format hour deltas with a sign."""
+    return f"{value:+g}h"
 
 
 def show_plan(plan_df, text: dict) -> None:
