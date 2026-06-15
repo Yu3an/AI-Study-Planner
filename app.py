@@ -20,6 +20,8 @@ st.set_page_config(
 def main() -> None:
     init_focus_state()
     init_checklist_state()
+    init_app_input_state()
+    preserve_app_input_state()
 
     if st.session_state.focus_screen_active:
         language = st.session_state.get("language", "English")
@@ -28,8 +30,11 @@ def main() -> None:
         return
 
     with st.sidebar:
-        language = st.selectbox("Language / 语言 / Sprache", ["English", "中文", "Deutsch"])
-        st.session_state.language = language
+        language = st.selectbox(
+            "Language / 语言 / Sprache",
+            ["English", "中文", "Deutsch"],
+            key="language",
+        )
         text = get_text(language)
 
         st.header(text["optional_ai_mode"])
@@ -37,6 +42,7 @@ def main() -> None:
             "OpenAI API Key",
             type="password",
             help=text["api_key_help"],
+            key="api_key",
         )
         st.info(text["api_info"])
 
@@ -51,24 +57,25 @@ def main() -> None:
     with col_left:
         add_anchor("course-settings")
         st.subheader(text["course_settings"])
-        course_name = st.text_input(text["course_name"], value=text["default_course"])
+        course_name = st.text_input(text["course_name"], key="course_name")
         exam_date = st.date_input(
             text["exam_date"],
-            value=date.today() + timedelta(days=21),
+            key="exam_date",
             min_value=date.today(),
         )
-        daily_hours = st.slider(text["daily_hours"], 0.5, 8.0, 2.0, 0.5)
-        study_days_per_week = st.slider(text["study_days_per_week"], 1, 7, 5)
-        include_weekends = st.checkbox(text["include_weekends"], value=True)
+        daily_hours = st.slider(text["daily_hours"], 0.5, 8.0, 0.5, key="daily_hours")
+        study_days_per_week = st.slider(text["study_days_per_week"], 1, 7, key="study_days_per_week")
+        include_weekends = st.checkbox(text["include_weekends"], key="include_weekends")
         weekend_hours = 0.0
         if include_weekends:
-            weekend_hours = st.slider(text["weekend_hours"], 0.5, 10.0, 3.0, 0.5)
+            weekend_hours = st.slider(text["weekend_hours"], 0.5, 10.0, 0.5, key="weekend_hours")
 
         difficulty_labels = text["difficulty_options"]
+        ensure_select_value("difficulty_label", list(difficulty_labels.values()), fallback_index=1)
         selected_difficulty_label = st.selectbox(
             text["difficulty"],
             list(difficulty_labels.values()),
-            index=1,
+            key="difficulty_label",
         )
         difficulty = reverse_lookup(difficulty_labels, selected_difficulty_label)
 
@@ -111,6 +118,65 @@ def reverse_lookup(options: dict, selected_label: str) -> str:
         if label == selected_label:
             return key
     return "Medium"
+
+
+def ensure_select_value(state_key: str, valid_values: list, fallback_index: int = 0) -> None:
+    """Reset stale selectbox state when labels changed or keys were reused."""
+    if not valid_values:
+        return
+    if st.session_state.get(state_key) not in valid_values:
+        st.session_state[state_key] = valid_values[fallback_index]
+
+
+def init_app_input_state() -> None:
+    """Initialize user input values so they survive focus-screen navigation."""
+    defaults = {
+        "language": "English",
+        "api_key": "",
+        "course_name": "Algorithms and Data Structures",
+        "exam_date": date.today() + timedelta(days=21),
+        "daily_hours": 2.0,
+        "study_days_per_week": 5,
+        "include_weekends": True,
+        "weekend_hours": 3.0,
+        "difficulty_label": "Medium",
+        "custom_tasks": "",
+        "playlist_custom_url": "",
+        "playlist_type": "",
+        "timer_mode": "",
+        "timer_minutes": 25,
+        "focus_note": "",
+        "focus_screen_timer_mode": "",
+        "focus_screen_timer_minutes": 25,
+    }
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
+
+
+def preserve_app_input_state() -> None:
+    """Keep widget-backed values when the focus screen temporarily hides widgets."""
+    keys_to_keep = [
+        "language",
+        "api_key",
+        "course_name",
+        "exam_date",
+        "daily_hours",
+        "study_days_per_week",
+        "include_weekends",
+        "weekend_hours",
+        "difficulty_label",
+        "selected_reference_tasks",
+        "custom_tasks",
+        "playlist_type",
+        "playlist_custom_url",
+        "timer_mode",
+        "timer_minutes",
+        "focus_note",
+    ]
+    for key in keys_to_keep:
+        if key in st.session_state:
+            st.session_state[key] = st.session_state[key]
 
 
 def render_generated_plan(
@@ -157,16 +223,27 @@ def build_task_input(text: dict) -> str:
     )
 
     reference_tasks = text.get("reference_tasks", clean_tasks(text.get("default_tasks", "")))
+    if "selected_reference_tasks" not in st.session_state:
+        st.session_state.selected_reference_tasks = reference_tasks[:4]
+
+    valid_selected_tasks = [
+        task for task in st.session_state.selected_reference_tasks if task in reference_tasks
+    ]
+    if not valid_selected_tasks:
+        valid_selected_tasks = reference_tasks[:4]
+        st.session_state.selected_reference_tasks = valid_selected_tasks
+
     selected_reference_tasks = st.multiselect(
         text.get("reference_tasks_label", "Reference tasks"),
         reference_tasks,
-        default=reference_tasks[:4],
+        default=valid_selected_tasks,
+        key="selected_reference_tasks",
     )
     custom_tasks = st.text_area(
         text.get("custom_tasks_label", "Custom tasks"),
-        value="",
         height=150,
         placeholder=text.get("custom_tasks_placeholder", "Enter one custom task per line"),
+        key="custom_tasks",
     )
 
     final_tasks = selected_reference_tasks + clean_tasks(custom_tasks)
@@ -626,15 +703,18 @@ def show_playlist(text: dict) -> None:
             "Deep work": "https://www.youtube.com/results?search_query=deep+work+music",
         },
     )
+    ensure_select_value("playlist_type", list(playlist_options.keys()))
     selected_playlist = st.selectbox(
         text.get("playlist_select", "Playlist type"),
         list(playlist_options.keys()),
+        key="playlist_type",
     )
     selected_url = playlist_options[selected_playlist]
 
     custom_url = st.text_input(
         text.get("custom_playlist", "Custom playlist link"),
         placeholder="https://...",
+        key="playlist_custom_url",
     )
     active_url = custom_url.strip() or selected_url
 
@@ -777,10 +857,12 @@ def show_minimal_focus_timer(text: dict, course_name: str) -> None:
 
     if st.session_state.focus_duration_seconds == 0:
         mode_labels = text["pomodoro_modes"]
+        ensure_select_value("focus_screen_timer_mode", list(mode_labels.values()))
         selected_mode_label = st.selectbox(
             text["timer_mode"],
             list(mode_labels.values()),
             index=0,
+            key="focus_screen_timer_mode",
         )
         selected_mode = reverse_lookup(mode_labels, selected_mode_label)
         default_minutes = {
@@ -794,6 +876,7 @@ def show_minimal_focus_timer(text: dict, course_name: str) -> None:
             max_value=120,
             value=default_minutes,
             step=1,
+            key="focus_screen_timer_minutes",
         )
         if st.button(text["start_timer"], type="primary"):
             start_timer(selected_mode, int(minutes))
@@ -840,10 +923,12 @@ def show_focus_timer(text: dict, course_name: str) -> None:
     with timer_col:
         st.markdown(f"#### {text['focus_mode']}")
         mode_labels = text["pomodoro_modes"]
+        ensure_select_value("timer_mode", list(mode_labels.values()))
         selected_mode_label = st.selectbox(
             text["timer_mode"],
             list(mode_labels.values()),
             index=0,
+            key="timer_mode",
         )
         selected_mode = reverse_lookup(mode_labels, selected_mode_label)
 
@@ -858,8 +943,11 @@ def show_focus_timer(text: dict, course_name: str) -> None:
             max_value=120,
             value=default_minutes,
             step=1,
+            key="timer_minutes",
         )
-        note = st.text_input(text["focus_note"], value=course_name)
+        if not st.session_state.get("focus_note"):
+            st.session_state.focus_note = course_name
+        note = st.text_input(text["focus_note"], key="focus_note")
 
         remaining_seconds, elapsed_seconds = calculate_timer_seconds()
         if st.session_state.focus_duration_seconds == 0:
