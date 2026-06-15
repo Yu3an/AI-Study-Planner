@@ -1,6 +1,8 @@
 from datetime import date, datetime, time as datetime_time, timedelta
+import json
 import random
 import time
+from pathlib import Path
 from uuid import uuid4
 
 import pandas as pd
@@ -15,6 +17,9 @@ st.set_page_config(
     page_title="AI Study Planner",
     layout="wide",
 )
+
+
+SAVE_FILE = Path("data/saved_profiles.json")
 
 
 def main() -> None:
@@ -45,6 +50,7 @@ def main() -> None:
             key="api_key",
         )
         st.info(text["api_info"])
+        show_memory_controls(text)
 
     apply_typography_style()
     show_companion_banner(text)
@@ -162,6 +168,9 @@ def init_app_input_state() -> None:
         "generated_plan_df": None,
         "generated_summary": None,
         "generated_context": None,
+        "profile_name": "",
+        "selected_saved_profile": "",
+        "skip_auto_save_once": False,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -199,6 +208,139 @@ def preserve_app_input_state() -> None:
     for key in keys_to_keep:
         if key in st.session_state:
             st.session_state[key] = st.session_state[key]
+
+
+def show_memory_controls(text: dict) -> None:
+    """Save and load lightweight user profiles without a database."""
+    st.divider()
+    st.header(text.get("memory_title", "Memory"))
+    st.caption(
+        text.get(
+            "memory_note",
+            "This saves your plan settings on this app instance. It is not a secure login.",
+        )
+    )
+
+    profile_name = st.text_input(
+        text.get("profile_name", "Profile name"),
+        key="profile_name",
+        placeholder=text.get("profile_placeholder", "e.g. Alice"),
+    ).strip()
+
+    saved_profiles = load_saved_profiles()
+    profile_names = sorted(saved_profiles.keys())
+
+    selected_profile = ""
+    if profile_names:
+        selected_profile = st.selectbox(
+            text.get("saved_profiles", "Saved profiles"),
+            profile_names,
+            key="selected_saved_profile",
+        )
+    else:
+        st.info(text.get("no_saved_profiles", "No saved profiles yet."))
+
+    if profile_name:
+        if st.session_state.get("skip_auto_save_once"):
+            st.session_state.skip_auto_save_once = False
+        else:
+            saved_profiles[profile_name] = build_profile_snapshot()
+            write_saved_profiles(saved_profiles)
+        st.caption(
+            text.get("auto_saved_profile", "Auto-saved as {profile}.").format(
+                profile=profile_name
+            )
+        )
+    else:
+        st.warning(text.get("profile_required", "Enter a profile name first."))
+
+    if st.button(text.get("load_profile", "Load"), use_container_width=True):
+        if selected_profile and selected_profile in saved_profiles:
+            apply_profile_snapshot(saved_profiles[selected_profile])
+            st.session_state.profile_name = selected_profile
+            st.session_state.skip_auto_save_once = True
+            st.success(text.get("profile_loaded", "Profile loaded."))
+            st.rerun()
+
+    if selected_profile and st.button(text.get("delete_profile", "Delete profile")):
+        saved_profiles.pop(selected_profile, None)
+        write_saved_profiles(saved_profiles)
+        st.success(text.get("profile_deleted", "Profile deleted."))
+        st.rerun()
+
+
+def load_saved_profiles() -> dict:
+    """Read saved profiles from disk."""
+    if not SAVE_FILE.exists():
+        return {}
+    try:
+        with SAVE_FILE.open("r", encoding="utf-8") as file:
+            return json.load(file)
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def write_saved_profiles(profiles: dict) -> None:
+    """Write saved profiles to disk."""
+    SAVE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with SAVE_FILE.open("w", encoding="utf-8") as file:
+        json.dump(profiles, file, ensure_ascii=False, indent=2)
+
+
+def build_profile_snapshot() -> dict:
+    """Collect current app state into a JSON-serializable snapshot."""
+    plan_df = st.session_state.get("generated_plan_df")
+    plan_records = plan_df.to_dict("records") if isinstance(plan_df, pd.DataFrame) else []
+
+    return {
+        "saved_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "course_name": st.session_state.get("course_name", ""),
+        "exam_date": st.session_state.get("exam_date", date.today()).isoformat(),
+        "daily_hours": st.session_state.get("daily_hours", 2.0),
+        "study_days_per_week": st.session_state.get("study_days_per_week", 5),
+        "include_weekends": st.session_state.get("include_weekends", True),
+        "weekend_hours": st.session_state.get("weekend_hours", 3.0),
+        "difficulty_label": st.session_state.get("difficulty_label", "Medium"),
+        "selected_reference_tasks": st.session_state.get("selected_reference_tasks", []),
+        "custom_tasks": st.session_state.get("custom_tasks", ""),
+        "task_checklist": st.session_state.get("task_checklist", {}),
+        "playlist_type": st.session_state.get("playlist_type", ""),
+        "playlist_custom_url": st.session_state.get("playlist_custom_url", ""),
+        "custom_study_advice": st.session_state.get("custom_study_advice", ""),
+        "final_study_advice": st.session_state.get("final_study_advice", ""),
+        "generated_plan_records": plan_records,
+        "generated_summary": st.session_state.get("generated_summary"),
+        "generated_context": st.session_state.get("generated_context"),
+    }
+
+
+def apply_profile_snapshot(profile: dict) -> None:
+    """Restore app state from a saved profile."""
+    st.session_state.course_name = profile.get("course_name", st.session_state.course_name)
+    st.session_state.exam_date = date.fromisoformat(
+        profile.get("exam_date", st.session_state.exam_date.isoformat())
+    )
+    st.session_state.daily_hours = float(profile.get("daily_hours", st.session_state.daily_hours))
+    st.session_state.study_days_per_week = int(
+        profile.get("study_days_per_week", st.session_state.study_days_per_week)
+    )
+    st.session_state.include_weekends = bool(
+        profile.get("include_weekends", st.session_state.include_weekends)
+    )
+    st.session_state.weekend_hours = float(profile.get("weekend_hours", st.session_state.weekend_hours))
+    st.session_state.difficulty_label = profile.get("difficulty_label", st.session_state.difficulty_label)
+    st.session_state.selected_reference_tasks = profile.get("selected_reference_tasks", [])
+    st.session_state.custom_tasks = profile.get("custom_tasks", "")
+    st.session_state.task_checklist = profile.get("task_checklist", {})
+    st.session_state.playlist_type = profile.get("playlist_type", "")
+    st.session_state.playlist_custom_url = profile.get("playlist_custom_url", "")
+    st.session_state.custom_study_advice = profile.get("custom_study_advice", "")
+    st.session_state.final_study_advice = profile.get("final_study_advice", "")
+
+    plan_records = profile.get("generated_plan_records", [])
+    st.session_state.generated_plan_df = pd.DataFrame(plan_records) if plan_records else None
+    st.session_state.generated_summary = profile.get("generated_summary")
+    st.session_state.generated_context = profile.get("generated_context")
 
 
 def generate_and_store_plan(
@@ -1186,6 +1328,7 @@ def show_plan(plan_df, text: dict) -> None:
         key="editable_study_plan",
     )
     edited_plan_df = delocalize_plan(edited_localized_df, text)
+    st.session_state.generated_plan_df = edited_plan_df
 
     csv_data = edited_localized_df.to_csv(index=False).encode("utf-8-sig")
     ics_data = build_icalendar(edited_plan_df).encode("utf-8")
