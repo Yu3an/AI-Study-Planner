@@ -619,18 +619,51 @@ def apply_typography_style() -> None:
         @media (max-width: 900px) {
             .quick-nav {
                 display: flex;
-                position: static;
-                width: auto;
-                min-height: 0;
-                margin: 1rem 0 1.25rem 0;
-                overflow: visible;
+                position: fixed;
+                top: auto;
+                right: 1rem;
+                bottom: 1rem;
+                width: 3.4rem;
+                height: 3.4rem;
+                min-height: 3.4rem;
+                margin: 0;
+                padding: 0.55rem;
+                border-radius: 999px;
+                overflow: hidden;
+                z-index: 2000;
             }
             .quick-nav strong {
-                align-self: flex-start;
+                align-self: center;
+                font-size: 0;
             }
-            .quick-nav a,
-            .quick-nav-art {
-                display: flex;
+            .quick-nav strong::after {
+                content: var(--mobile-menu-label);
+                font-size: 0.78rem;
+                color: #111827;
+            }
+            .quick-nav:hover,
+            .quick-nav:focus-within {
+                width: min(12rem, calc(100vw - 2rem));
+                height: auto;
+                min-height: 0;
+                border-radius: 10px;
+                padding: 0.75rem;
+            }
+            .quick-nav:hover strong,
+            .quick-nav:focus-within strong {
+                align-self: flex-start;
+                font-size: 0.85rem;
+            }
+            .quick-nav:hover strong::after,
+            .quick-nav:focus-within strong::after {
+                content: "";
+                font-size: 0;
+            }
+            .quick-nav:hover a,
+            .quick-nav:focus-within a,
+            .quick-nav:hover .quick-nav-art,
+            .quick-nav:focus-within .quick-nav-art {
+                display: inline-flex;
             }
         }
         </style>
@@ -651,6 +684,7 @@ def add_module_spacer() -> None:
 
 def show_quick_nav(text: dict) -> None:
     """Render a compact jump navigation for the main page modules."""
+    mobile_label = text.get("quick_menu_short", "Menu")
     links = [
         ("course-settings", text.get("nav_course", "Course")),
         ("study-tasks", text.get("nav_tasks", "Tasks")),
@@ -669,7 +703,7 @@ def show_quick_nav(text: dict) -> None:
         </div>
     """
     st.markdown(
-        f"<nav class='quick-nav'><strong>{text.get('quick_actions', 'Quick Actions')}</strong>{link_html}{art_html}</nav>",
+        f"<nav class='quick-nav' style='--mobile-menu-label: \"{mobile_label}\";'><strong>{text.get('quick_actions', 'Quick Actions')}</strong>{link_html}{art_html}</nav>",
         unsafe_allow_html=True,
     )
 
