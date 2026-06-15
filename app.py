@@ -620,9 +620,9 @@ def apply_typography_style() -> None:
             .quick-nav {
                 display: flex;
                 position: fixed;
-                top: auto;
+                top: 1rem;
                 right: 1rem;
-                bottom: 1rem;
+                bottom: auto;
                 width: 3.4rem;
                 height: 3.4rem;
                 min-height: 3.4rem;
