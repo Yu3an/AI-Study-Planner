@@ -98,8 +98,7 @@ def main() -> None:
     )
 
     if generate_from_main_button:
-        render_generated_plan(
-            api_key=api_key,
+        generate_and_store_plan(
             course_name=course_name,
             exam_date=exam_date,
             daily_hours=daily_hours,
@@ -110,6 +109,13 @@ def main() -> None:
             weekend_hours=weekend_hours,
             text=text,
         )
+
+    if (
+        st.session_state.get("generated_plan_df") is not None
+        and st.session_state.get("generated_summary") is not None
+        and st.session_state.get("generated_context") is not None
+    ):
+        render_stored_plan(api_key=api_key, text=text)
 
 
 def reverse_lookup(options: dict, selected_label: str) -> str:
@@ -148,6 +154,14 @@ def init_app_input_state() -> None:
         "focus_note": "",
         "focus_screen_timer_mode": "",
         "focus_screen_timer_minutes": 25,
+        "custom_study_advice": "",
+        "final_study_advice": "",
+        "pending_final_advice": "",
+        "ai_advice_cache": "",
+        "ai_advice_cache_key": None,
+        "generated_plan_df": None,
+        "generated_summary": None,
+        "generated_context": None,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -173,14 +187,21 @@ def preserve_app_input_state() -> None:
         "timer_mode",
         "timer_minutes",
         "focus_note",
+        "custom_study_advice",
+        "final_study_advice",
+        "pending_final_advice",
+        "ai_advice_cache",
+        "ai_advice_cache_key",
+        "generated_plan_df",
+        "generated_summary",
+        "generated_context",
     ]
     for key in keys_to_keep:
         if key in st.session_state:
             st.session_state[key] = st.session_state[key]
 
 
-def render_generated_plan(
-    api_key: str,
+def generate_and_store_plan(
     course_name: str,
     exam_date: date,
     daily_hours: float,
@@ -191,7 +212,7 @@ def render_generated_plan(
     weekend_hours: float,
     text: dict,
 ) -> None:
-    """Generate and render the study plan from any page action button."""
+    """Generate a study plan and store it so widget reruns do not hide it."""
     plan_df, summary = generate_plan(
         course_name=course_name,
         exam_date=exam_date,
@@ -207,9 +228,31 @@ def render_generated_plan(
         st.error(text["input_error"])
         return
 
+    st.session_state.generated_plan_df = plan_df
+    st.session_state.generated_summary = summary
+    st.session_state.generated_context = {
+        "course_name": course_name,
+        "difficulty": difficulty,
+        "raw_tasks": raw_tasks,
+    }
+
+
+def render_stored_plan(api_key: str, text: dict) -> None:
+    """Render the last generated plan from session state."""
+    plan_df = st.session_state.generated_plan_df
+    summary = st.session_state.generated_summary
+    context = st.session_state.generated_context
+
     show_summary(summary, text)
     show_plan(plan_df, text)
-    show_advice(api_key, course_name, difficulty, raw_tasks, summary, text)
+    show_advice(
+        api_key=api_key,
+        course_name=context["course_name"],
+        difficulty=context["difficulty"],
+        raw_tasks=context["raw_tasks"],
+        summary=summary,
+        text=text,
+    )
 
 
 def build_task_input(text: dict) -> str:
@@ -1131,14 +1174,21 @@ def show_summary(summary: dict, text: dict) -> None:
 
 
 def show_plan(plan_df, text: dict) -> None:
-    """Render the generated plan and offer a CSV download."""
+    """Render an editable plan table and offer CSV/iCalendar downloads."""
     localized_df = localize_plan(plan_df, text)
 
     st.subheader(text["daily_plan"])
-    st.dataframe(localized_df, use_container_width=True, hide_index=True)
+    edited_localized_df = st.data_editor(
+        localized_df,
+        use_container_width=True,
+        hide_index=True,
+        num_rows="dynamic",
+        key="editable_study_plan",
+    )
+    edited_plan_df = delocalize_plan(edited_localized_df, text)
 
-    csv_data = localized_df.to_csv(index=False).encode("utf-8-sig")
-    ics_data = build_icalendar(plan_df).encode("utf-8")
+    csv_data = edited_localized_df.to_csv(index=False).encode("utf-8-sig")
+    ics_data = build_icalendar(edited_plan_df).encode("utf-8")
 
     download_col_csv, download_col_calendar = st.columns([1, 1])
     download_col_csv.download_button(
@@ -1166,25 +1216,159 @@ def show_advice(
     """Show rule-based advice and optional AI-generated advice."""
     st.subheader(text["study_advice"])
 
-    for item in build_localized_advice(summary, difficulty, text):
-        st.write(f"- {item}")
+    rule_based_advice = build_localized_advice(summary, difficulty, text)
+    custom_advice = st.session_state.get("custom_study_advice", "")
 
-    if api_key:
-        with st.spinner(text["ai_spinner"]):
-            ai_advice = generate_ai_advice(
+    selected_ai_advice = []
+    with st.expander(text.get("advice_sources", "Advice sources"), expanded=False):
+        st.markdown(f"#### {text.get('base_advice_title', 'Base Advice')}")
+        for item in rule_based_advice:
+            st.write(f"- {item}")
+
+        st.markdown(f"#### {text.get('custom_advice_option', 'Custom advice')}")
+        st.text_area(
+            text.get("editable_advice", "Editable advice"),
+            height=100,
+            placeholder=text.get("editable_advice_placeholder", "Add your own study advice here."),
+            key="custom_study_advice",
+        )
+        st.button(
+            text.get("clear_custom_advice", "Clear custom advice"),
+            on_click=clear_custom_study_advice,
+        )
+
+        if api_key:
+            ai_advice = get_cached_ai_advice(
+                api_key=api_key,
+                course_name=course_name,
+                difficulty=difficulty,
+                raw_tasks=raw_tasks,
+                summary=summary,
+                spinner_text=text.get("ai_spinner", "Generating optional AI advice..."),
+            )
+            ai_advice_items = parse_advice_items(ai_advice)
+            if ai_advice_items:
+                st.markdown(f"#### {text.get('ai_candidates_title', 'Selectable AI Suggestions')}")
+                selected_ai_advice = show_selectable_ai_advice(ai_advice_items, text)
+                if selected_ai_advice:
+                    st.caption(
+                        text.get("accepted_ai_summary", "{count} accepted AI suggestions.").format(
+                            count=len(selected_ai_advice)
+                        )
+                    )
+                else:
+                    st.caption(text.get("no_accepted_ai_advice", "No AI advice selected yet."))
+            else:
+                st.markdown(f"#### {text.get('ai_advice_option', 'AI advice')}")
+                st.write(ai_advice)
+        else:
+            st.caption(text.get("ai_key_hint", "Enter an OpenAI API key to generate selectable AI advice."))
+
+    custom_items = clean_tasks(st.session_state.get("custom_study_advice", ""))
+    final_advice = rule_based_advice + custom_items + selected_ai_advice
+
+    st.session_state.pending_final_advice = "\n".join(final_advice)
+    st.button(
+        text.get("build_final_advice", "Build / update final advice"),
+        on_click=update_final_study_advice,
+    )
+
+    st.text_area(
+        text.get("editable_final_advice", "Editable final advice"),
+        height=180,
+        placeholder=text.get(
+            "editable_final_advice_placeholder",
+            "Click the update button or write your final advice here.",
+        ),
+        key="final_study_advice",
+    )
+
+    final_items = clean_tasks(st.session_state.get("final_study_advice", ""))
+    if final_items:
+        st.caption(
+            text.get("final_advice_count", "{count} final advice items.").format(
+                count=len(final_items)
+            )
+        )
+    else:
+        st.info(text.get("empty_final_advice", "No final advice yet."))
+
+
+def translate_value(text: dict, group: str, value: str) -> str:
+    """Translate a planner value while keeping the original as fallback."""
+    return text[group].get(value, value)
+
+
+def clear_custom_study_advice() -> None:
+    """Clear the editable study advice before widgets are instantiated."""
+    st.session_state.custom_study_advice = ""
+
+
+def update_final_study_advice() -> None:
+    """Copy the current combined advice into the editable final advice field."""
+    st.session_state.final_study_advice = st.session_state.get("pending_final_advice", "")
+
+
+def parse_advice_items(advice_text: str) -> list:
+    """Parse bullet-style AI advice into clean selectable items."""
+    items = []
+    for line in advice_text.splitlines():
+        item = line.strip()
+        if not item:
+            continue
+        item = item.lstrip("-*• ").strip()
+        if len(item) > 2 and item[0].isdigit():
+            item = item.lstrip("0123456789. )").strip()
+        if item:
+            items.append(item)
+    return items
+
+
+def show_selectable_ai_advice(ai_advice_items: list, text: dict) -> list:
+    """Render AI advice as checkboxes and return accepted items."""
+    st.caption(text.get("select_ai_advice_hint", "Select AI advice to include in Final Advice."))
+    selected_items = []
+    for index, item in enumerate(ai_advice_items):
+        checkbox_key = f"accepted_ai_advice_{index}"
+        is_selected = st.checkbox(item, key=checkbox_key)
+        if is_selected:
+            selected_items.append(item)
+    st.caption(
+        text.get("accepted_ai_count", "{count} AI suggestions selected.").format(
+            count=len(selected_items)
+        )
+    )
+    return selected_items
+
+
+def get_cached_ai_advice(
+    api_key: str,
+    course_name: str,
+    difficulty: str,
+    raw_tasks: str,
+    summary: dict,
+    spinner_text: str,
+) -> str:
+    """Generate AI advice once per plan context and reuse it across reruns."""
+    cache_key = {
+        "course_name": course_name,
+        "difficulty": difficulty,
+        "tasks": clean_tasks(raw_tasks),
+        "days_until_exam": summary.get("days_until_exam"),
+        "available_study_days": summary.get("available_study_days"),
+    }
+    if st.session_state.get("ai_advice_cache_key") != cache_key:
+        with st.spinner(spinner_text):
+            st.session_state.ai_advice_cache = generate_ai_advice(
                 api_key=api_key,
                 course_name=course_name,
                 difficulty=difficulty,
                 tasks=clean_tasks(raw_tasks),
                 summary=summary,
             )
-        st.markdown(f"#### {text['ai_suggestions']}")
-        st.write(ai_advice)
+        st.session_state.ai_advice_cache_key = cache_key
 
-
-def translate_value(text: dict, group: str, value: str) -> str:
-    """Translate a planner value while keeping the original as fallback."""
-    return text[group].get(value, value)
+    return st.session_state.get("ai_advice_cache", "")
 
 
 def build_icalendar(plan_df) -> str:
@@ -1244,6 +1428,26 @@ def localize_plan(plan_df, text: dict):
         lambda value: translate_value(text, "day_type_values", value)
     )
     return localized_df.rename(columns=text["columns"])
+
+
+def delocalize_plan(localized_df, text: dict):
+    """Convert an edited localized plan table back to internal column names."""
+    reverse_columns = {localized: original for original, localized in text["columns"].items()}
+    plan_df = localized_df.rename(columns=reverse_columns).copy()
+
+    if "Focus" in plan_df.columns:
+        reverse_focus = {localized: original for original, localized in text["focus_values"].items()}
+        plan_df["Focus"] = plan_df["Focus"].map(lambda value: reverse_focus.get(value, value))
+
+    if "Day Type" in plan_df.columns:
+        reverse_day_type = {
+            localized: original for original, localized in text["day_type_values"].items()
+        }
+        plan_df["Day Type"] = plan_df["Day Type"].map(
+            lambda value: reverse_day_type.get(value, value)
+        )
+
+    return plan_df
 
 
 def build_localized_advice(summary: dict, difficulty: str, text: dict) -> list:
