@@ -134,10 +134,6 @@ def main() -> None:
     st.session_state.last_course_name = course_name
     st.session_state.last_raw_tasks = raw_tasks
 
-    show_task_checklist(text, raw_tasks)
-    show_playlist(text)
-    show_focus_timer(text, course_name)
-
     add_anchor("generate-plan")
     generate_from_main_button = st.button(
         text["generate"],
@@ -164,6 +160,10 @@ def main() -> None:
         and st.session_state.get("generated_context") is not None
     ):
         render_stored_plan(api_key=api_key, text=text)
+
+    show_task_checklist(text, raw_tasks)
+    show_focus_timer(text, course_name)
+    show_playlist(text)
 
 
 def reverse_lookup(options: dict, selected_label: str) -> str:
@@ -800,11 +800,11 @@ def show_quick_nav(text: dict) -> None:
     links = [
         ("course-settings", text.get("nav_course", "Course")),
         ("study-tasks", text.get("nav_tasks", "Tasks")),
-        ("task-checklist", text.get("nav_checklist", "Checklist")),
-        ("playlist", text.get("nav_playlist", "Playlist")),
-        ("focus-mode", text.get("nav_focus", "Focus")),
         ("generate-plan", text.get("generate", "Generate Study Plan")),
         ("study-plan", text.get("nav_plan", "Plan")),
+        ("task-checklist", text.get("nav_checklist", "Checklist")),
+        ("focus-mode", text.get("nav_focus", "Focus")),
+        ("playlist", text.get("nav_playlist", "Playlist")),
     ]
     link_html = "".join(f"<a href='#{anchor}'>{label}</a>" for anchor, label in links)
     art_html = """
@@ -1054,8 +1054,8 @@ def show_playlist(text: dict) -> None:
     st.markdown(
         f"""
         <div class="playlist-box">
-            <div class="playlist-title">{selected_playlist}</div>
-            <a href="{active_url}" target="_blank" rel="noopener noreferrer">{link_label}</a>
+            <div class="playlist-title">{escape(selected_playlist)}</div>
+            <a href="{escape(active_url)}" target="_blank" rel="noopener noreferrer">{escape(link_label)}</a>
         </div>
         """,
         unsafe_allow_html=True,
